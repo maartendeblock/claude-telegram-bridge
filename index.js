@@ -5,6 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 import { t, setLanguage, getLanguage, getSupportedLanguages, getDefaultLanguage } from './lib/i18n.js';
+import { parseCommand, validateFlags, getClaudeHelp, parseSlashCommand } from './lib/commandParser.js';
+import { getSessionPreferences, setSessionPreference, getSessionMetadata, setSessionMetadata, clearSessionMetadata } from './lib/sessionManager.js';
 dotenv.config();
 
 // ============================
@@ -85,22 +87,36 @@ async function sendMessage(chatId, text, options = {}) {
   }
 }
 
+function discoverCustomCommands() {
+  try {
+    const commandsDir = path.join(WORKING_DIR, '.claude', 'commands');
+    if (!fs.existsSync(commandsDir)) {
+      return [];
+    }
+
+    const files = fs.readdirSync(commandsDir);
+    const commands = files
+      .filter(f => f.endsWith('.md'))
+      .map(f => `/${f.replace('.md', '')}`);
+
+    return commands;
+  } catch (error) {
+    console.error('⚠️ Error discovering custom commands:', error.message);
+    return [];
+  }
+}
+
 // ============================
 // CRIAR SESSÃO STREAM JSON
 // ============================
 
-function createClaudeSession(chatId) {
-  console.log(`\n🚀 [${chatId}] Creating stream session...`);
+function createClaudeSessionWithFlags(chatId, customFlags = []) {
+  console.log(`\n🚀 [${chatId}] Creating stream session with custom flags...`);
 
   const sessionId = generateUUID();
 
-  // Iniciar Claude em modo stream-json
-  // No Windows, usar .cmd explicitamente
-  const claudeCmd = process.platform === 'win32' && !CLAUDE_CODE_PATH.endsWith('.cmd')
-    ? CLAUDE_CODE_PATH + '.cmd'
-    : CLAUDE_CODE_PATH;
-
-  const claudeProcess = spawn(claudeCmd, [
+  // Build base args
+  const args = [
     '--print',
     '--verbose',
     '--input-format', 'stream-json',
@@ -108,8 +124,110 @@ function createClaudeSession(chatId) {
     '--include-partial-messages',
     '--replay-user-messages',
     '--session-id', sessionId,
-    '--dangerously-skip-permissions'
-  ], {
+    ...customFlags
+  ];
+
+  // No Windows, usar .cmd explicitamente
+  const claudeCmd = process.platform === 'win32' && !CLAUDE_CODE_PATH.endsWith('.cmd')
+    ? CLAUDE_CODE_PATH + '.cmd'
+    : CLAUDE_CODE_PATH;
+
+  const claudeProcess = spawn(claudeCmd, args, {
+    cwd: WORKING_DIR,
+    shell: true,
+    windowsHide: true
+  });
+
+  const session = {
+    process: claudeProcess,
+    sessionId: sessionId,
+    buffer: '',
+    active: true,
+    messageBuffer: new Map()
+  };
+
+  sessions.set(chatId, session);
+
+  // ============================
+  // PROCESSAR OUTPUT STREAM JSON
+  // ============================
+
+  claudeProcess.stdout.on('data', (data) => {
+    session.buffer += data.toString();
+    processStreamBuffer(chatId, session);
+  });
+
+  claudeProcess.stderr.on('data', (data) => {
+    const text = data.toString();
+    console.log(`⚠️ [${chatId}] Stderr: ${text}`);
+  });
+
+  claudeProcess.on('error', (error) => {
+    console.error(`❌ [${chatId}] Process error:`, error);
+    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: error.message }));
+    sessions.delete(chatId);
+  });
+
+  claudeProcess.on('close', (code) => {
+    console.log(`🔴 [${chatId}] Session closed (code: ${code})`);
+    bot.sendMessage(chatId, t(chatId, 'session.closed', { code }));
+    sessions.delete(chatId);
+  });
+
+  console.log(`✅ [${chatId}] Session created! Session ID: ${sessionId}`);
+  return session;
+}
+
+function createClaudeSession(chatId) {
+  console.log(`\n🚀 [${chatId}] Creating stream session...`);
+
+  const sessionId = generateUUID();
+
+  // Get saved preferences
+  const prefs = getSessionPreferences(chatId);
+
+  // Build args array
+  const args = [
+    '--print',
+    '--verbose',
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '--include-partial-messages',
+    '--replay-user-messages',
+    '--session-id', sessionId,
+  ];
+
+  // Add model if set
+  if (prefs.model) {
+    args.push('--model', prefs.model);
+  }
+
+  // Add tools if set
+  if (prefs.tools) {
+    args.push('--allowedTools', prefs.tools);
+  }
+
+  if (prefs.disabledTools) {
+    args.push('--disallowedTools', prefs.disabledTools);
+  }
+
+  // Add permissions mode
+  const permMode = prefs.permissions || 'skip';
+  if (permMode === 'skip') {
+    args.push('--dangerously-skip-permissions');
+  } else if (permMode === 'strict') {
+    // Default mode - no flag needed
+  } else if (permMode === 'relaxed') {
+    args.push('--permission-mode', 'acceptEdits');
+  }
+
+  // Iniciar Claude em modo stream-json
+  // No Windows, usar .cmd explicitamente
+  const claudeCmd = process.platform === 'win32' && !CLAUDE_CODE_PATH.endsWith('.cmd')
+    ? CLAUDE_CODE_PATH + '.cmd'
+    : CLAUDE_CODE_PATH;
+
+  const claudeProcess = spawn(claudeCmd, args, {
     cwd: WORKING_DIR,
     shell: true,
     windowsHide: true
@@ -590,6 +708,311 @@ bot.on('message', async (msg) => {
   // ============================
   // COMANDOS
   // ============================
+
+  // ============================
+  // /COMMAND - Execute Claude CLI with custom flags
+  // ============================
+  if (text && text.startsWith('/command')) {
+    const commandText = text.substring(9).trim(); // Remove "/command "
+
+    // Handle --help
+    if (!commandText || commandText === '--help' || commandText === '-h') {
+      let helpText = t(chatId, 'commands.command.helpHeader') + '\n\n';
+
+      // Get Claude CLI help
+      const claudeHelp = getClaudeHelp();
+      helpText += '```\n' + claudeHelp + '\n```';
+
+      // List custom slash commands
+      const customCommands = discoverCustomCommands();
+      if (customCommands.length > 0) {
+        helpText += '\n' + t(chatId, 'commands.command.customCommandsHeader') + '\n';
+        customCommands.forEach(cmd => {
+          helpText += `• \`${cmd}\`\n`;
+        });
+      } else {
+        helpText += '\n' + t(chatId, 'commands.command.noCustomCommands');
+      }
+
+      // List shortcuts
+      helpText += '\n' + t(chatId, 'commands.command.shortcutsHeader') + '\n';
+      helpText += '• `/model` - Switch model\n';
+      helpText += '• `/resume` - Resume session\n';
+      helpText += '• `/continue` - Continue last conversation\n';
+      helpText += '• `/tools` - Manage tools\n';
+      helpText += '• `/permissions` - Set permission mode\n';
+
+      await bot.sendMessage(chatId, helpText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // Parse command
+    const parsed = parseCommand(commandText);
+
+    // Validate flags
+    const validation = validateFlags(parsed.flags);
+    if (!validation.valid) {
+      let errorMsg = '';
+      validation.errors.forEach(flag => {
+        errorMsg += t(chatId, 'commands.command.forbidden', { flag }) + '\n';
+      });
+      await bot.sendMessage(chatId, errorMsg.trim(), { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // Check if it's a slash command
+    if (parsed.slashCommand) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.command.executing', { command: parsed.slashCommand }));
+
+      // Build args for slash command
+      const slashArgs = ['--dangerously-skip-permissions', parsed.slashCommand, ...parsed.args];
+
+      // Kill existing session
+      const oldSession = sessions.get(chatId);
+      if (oldSession?.process) {
+        oldSession.process.kill();
+        sessions.delete(chatId);
+        pendingMessages.delete(chatId);
+      }
+
+      // Create session with slash command
+      const session = createClaudeSessionWithFlags(chatId, slashArgs);
+      return;
+    }
+
+    // Execute with custom flags + prompt
+    if (parsed.prompt) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.command.executing', { command: commandText }));
+
+      // Build args from flags
+      const customArgs = [];
+      parsed.flags.forEach(flag => {
+        customArgs.push(flag.name);
+        if (flag.value !== true) {
+          customArgs.push(flag.value);
+        }
+      });
+
+      // Add skip permissions
+      customArgs.push('--dangerously-skip-permissions');
+
+      // Kill existing session
+      const oldSession = sessions.get(chatId);
+      if (oldSession?.process) {
+        oldSession.process.kill();
+        sessions.delete(chatId);
+        pendingMessages.delete(chatId);
+      }
+
+      // Create session with custom flags
+      const session = createClaudeSessionWithFlags(chatId, customArgs);
+
+      // Send prompt to session
+      setTimeout(() => {
+        sendToClaudeSession(chatId, parsed.prompt);
+      }, 500);
+
+      return;
+    }
+
+    // No prompt provided
+    await bot.sendMessage(chatId, t(chatId, 'commands.command.noArgs', {
+      usage: t(chatId, 'commands.command.usage')
+    }), { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // ============================
+  // /MODEL - Switch Claude model
+  // ============================
+  if (text && text.startsWith('/model')) {
+    const args = text.split(' ');
+
+    // No args - show current model
+    if (args.length === 1) {
+      const prefs = getSessionPreferences(chatId);
+      const current = prefs.model || 'sonnet';
+      await bot.sendMessage(chatId, t(chatId, 'commands.model.current', { model: current }));
+      return;
+    }
+
+    const model = args[1].toLowerCase();
+
+    // Validate model
+    if (!['sonnet', 'opus', 'haiku'].includes(model)) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.model.invalid', { model }));
+      return;
+    }
+
+    // Save preference
+    setSessionPreference(chatId, 'model', model);
+
+    // Auto-restart session if one exists
+    const session = sessions.get(chatId);
+    if (session?.process) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.model.restarting', { model }), { parse_mode: 'Markdown' });
+
+      // Kill old session
+      session.process.kill();
+      sessions.delete(chatId);
+      pendingMessages.delete(chatId);
+
+      // Start new session with model
+      const newSession = createClaudeSession(chatId);
+      await bot.sendMessage(chatId, t(chatId, 'commands.model.changed', { model }), { parse_mode: 'Markdown' });
+    } else {
+      await bot.sendMessage(chatId, t(chatId, 'commands.model.changed', { model }), { parse_mode: 'Markdown' });
+    }
+
+    return;
+  }
+
+  // ============================
+  // /RESUME - Resume a previous session
+  // ============================
+  if (text && text.startsWith('/resume')) {
+    const args = text.split(' ');
+
+    if (args.length < 2) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.resume.usage'));
+      return;
+    }
+
+    const sessionId = args[1];
+
+    // Kill existing session
+    const oldSession = sessions.get(chatId);
+    if (oldSession?.process) {
+      oldSession.process.kill();
+      sessions.delete(chatId);
+      pendingMessages.delete(chatId);
+    }
+
+    await bot.sendMessage(chatId, t(chatId, 'commands.resume.resuming', { sessionId }), { parse_mode: 'Markdown' });
+
+    // Create session with --resume flag
+    const session = createClaudeSessionWithFlags(chatId, ['--resume', sessionId, '--dangerously-skip-permissions']);
+
+    await bot.sendMessage(chatId, t(chatId, 'commands.resume.resumed', { sessionId }), { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // ============================
+  // /CONTINUE - Continue most recent conversation
+  // ============================
+  if (text === '/continue') {
+    // Kill existing session
+    const oldSession = sessions.get(chatId);
+    if (oldSession?.process) {
+      oldSession.process.kill();
+      sessions.delete(chatId);
+      pendingMessages.delete(chatId);
+    }
+
+    await bot.sendMessage(chatId, t(chatId, 'commands.continue.continuing'));
+
+    // Create session with --continue flag
+    const session = createClaudeSessionWithFlags(chatId, ['--continue', '--dangerously-skip-permissions']);
+
+    await bot.sendMessage(chatId, t(chatId, 'commands.continue.continued'));
+    return;
+  }
+
+  // ============================
+  // /TOOLS - Manage available tools
+  // ============================
+  if (text && text.startsWith('/tools')) {
+    const args = text.split(' ');
+
+    if (args.length === 1 || args[1] === 'list') {
+      // List available tools
+      const tools = ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'];
+      await bot.sendMessage(chatId, t(chatId, 'commands.tools.listing', { tools: tools.join(', ') }), { parse_mode: 'Markdown' });
+      return;
+    }
+
+    const action = args[1];
+    const toolList = args.slice(2).join(' ');
+
+    if (action === 'enable') {
+      setSessionPreference(chatId, 'tools', toolList);
+
+      const session = sessions.get(chatId);
+      if (session?.process) {
+        await bot.sendMessage(chatId, t(chatId, 'commands.tools.enabling', { tools: toolList }));
+
+        session.process.kill();
+        sessions.delete(chatId);
+        pendingMessages.delete(chatId);
+
+        const newSession = createClaudeSession(chatId);
+        await bot.sendMessage(chatId, t(chatId, 'commands.tools.enabled', { tools: toolList }));
+      } else {
+        await bot.sendMessage(chatId, t(chatId, 'commands.tools.enabled', { tools: toolList }));
+      }
+    } else if (action === 'disable') {
+      setSessionPreference(chatId, 'disabledTools', toolList);
+
+      const session = sessions.get(chatId);
+      if (session?.process) {
+        await bot.sendMessage(chatId, t(chatId, 'commands.tools.disabling', { tools: toolList }));
+
+        session.process.kill();
+        sessions.delete(chatId);
+        pendingMessages.delete(chatId);
+
+        const newSession = createClaudeSession(chatId);
+        await bot.sendMessage(chatId, t(chatId, 'commands.tools.disabled', { tools: toolList }));
+      } else {
+        await bot.sendMessage(chatId, t(chatId, 'commands.tools.disabled', { tools: toolList }));
+      }
+    } else {
+      await bot.sendMessage(chatId, t(chatId, 'commands.tools.invalid'));
+    }
+
+    return;
+  }
+
+  // ============================
+  // /PERMISSIONS - Control permission approval mode
+  // ============================
+  if (text && text.startsWith('/permissions')) {
+    const args = text.split(' ');
+
+    if (args.length === 1) {
+      const prefs = getSessionPreferences(chatId);
+      const mode = prefs.permissions || 'skip';
+      await bot.sendMessage(chatId, t(chatId, 'commands.permissions.current', {
+        mode: t(chatId, `commands.permissions.${mode}`)
+      }));
+      return;
+    }
+
+    const mode = args[1].toLowerCase();
+
+    if (!['strict', 'relaxed', 'skip'].includes(mode)) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.permissions.invalid', { mode }));
+      return;
+    }
+
+    setSessionPreference(chatId, 'permissions', mode);
+
+    const session = sessions.get(chatId);
+    if (session?.process) {
+      await bot.sendMessage(chatId, t(chatId, 'commands.permissions.changing', { mode }), { parse_mode: 'Markdown' });
+
+      session.process.kill();
+      sessions.delete(chatId);
+      pendingMessages.delete(chatId);
+
+      const newSession = createClaudeSession(chatId);
+      await bot.sendMessage(chatId, t(chatId, 'commands.permissions.changed', { mode }), { parse_mode: 'Markdown' });
+    } else {
+      await bot.sendMessage(chatId, t(chatId, 'commands.permissions.changed', { mode }), { parse_mode: 'Markdown' });
+    }
+
+    return;
+  }
 
   if (text === '/start') {
     // Encerrar sessão anterior se existir

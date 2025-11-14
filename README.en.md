@@ -157,6 +157,60 @@ npm run dev
 | `/lang pt` | Switch to Portuguese |
 | `/lang nl` | Switch to Dutch |
 
+### Advanced Commands
+
+The bot now supports advanced Claude Code CLI commands!
+
+#### Direct CLI Execution
+```bash
+/command <flags> <prompt>
+/command --help                    # View all Claude CLI options
+/command --model opus "Write a poem"
+/command --tools Bash,Read "List files"
+/command /review-pr 123            # Execute custom command
+```
+
+#### Quick Shortcuts
+
+**Switch Model:**
+```bash
+/model                    # View current model
+/model sonnet            # Use Claude Sonnet
+/model opus              # Use Claude Opus
+/model haiku             # Use Claude Haiku
+```
+
+**Resume Conversations:**
+```bash
+/resume <session-id>     # Resume specific session
+/continue                # Continue most recent conversation
+```
+
+**Manage Tools:**
+```bash
+/tools                   # List available tools
+/tools list              # List available tools
+/tools enable Bash,Read  # Enable only specific tools
+/tools disable Write     # Disable specific tools
+```
+
+**Control Permissions:**
+```bash
+/permissions             # View current mode
+/permissions strict      # Ask for every permission
+/permissions relaxed     # Auto-approve reads
+/permissions skip        # Auto-approve everything (default)
+```
+
+#### Custom Commands
+
+The bot automatically discovers custom commands in `.claude/commands/`:
+```bash
+/command /review-pr 123
+/command /fix-bug "Bug description"
+/command /optimize main.js
+```
+
 ### 🌐 Language Selection
 
 The bot supports **3 languages** for the entire interface and messages:
