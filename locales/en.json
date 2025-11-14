@@ -20,13 +20,70 @@
   },
   "commands": {
     "start": "🚀 *Claude Code Stream Session Started!*\n\n{chatIcon} *Type:* {chatType}\n✨ *Stream JSON Mode Active*\n• Real-time messages via stream\n• Partial updates while Claude thinks\n• Tool execution notifications\n• 📸 Image support (vision)\n• 🎤 Audio/voice support{whisperStatus}\n\n📝 Session ID: `{sessionId}`\n📁 Directory: `{directory}`\n{whisperLine}{groupWarning}\n*Commands:*\n/start - New session\n/stop - Stop session\n/status - View status\n/help - Help\n/lang - Change language",
-    "help": "❓ *How to use*\n\nControl Claude Code via Telegram with real-time streaming!\n\n*Workflow:*\n1. /start - Start stream session\n2. Type your message/request\n3. 📸 Send photos - Claude analyzes with vision\n4. 🎤 Send audio - Saved locally\n5. See real-time responses\n6. Answer Y/N for approvals\n\n*Commands:*\n/start - Start new session\n/stop - Stop session\n/status - View status\n/help - This help\n/lang - Change language\n\n*Supported media:*\n📸 Photos - Analysis with Claude vision\n🎤 Audio/Voice - Automatic transcription via Whisper{whisperStatus}",
+    "help": "❓ *How to use*\n\nControl Claude Code via Telegram with real-time streaming!\n\n*Workflow:*\n1. /start - Start stream session\n2. Type your message/request\n3. 📸 Send photos - Claude analyzes with vision\n4. 🎤 Send audio - Saved locally\n5. See real-time responses\n6. Answer Y/N for approvals\n\n*Basic Commands:*\n/start - Start new session\n/stop - Stop session\n/status - View status\n/help - This help\n/lang - Change language\n\n*Advanced Commands:*\n/command - Execute Claude CLI with custom flags\n/model - Switch Claude model (sonnet/opus/haiku)\n/resume - Resume a previous session\n/continue - Continue most recent conversation\n/tools - Manage available tools\n/permissions - Control permission mode\n\n*Supported media:*\n📸 Photos - Analysis with Claude vision\n🎤 Audio/Voice - Automatic transcription via Whisper{whisperStatus}",
     "chatTypePrivate": "Private Chat",
     "chatTypeGroup": "Group (shared session)",
     "whisperActive": " with Whisper transcription",
     "whisperConfigLine": "🎙️ Whisper: ✅ Active\n",
     "whisperMissingLine": "🎙️ Whisper: ⚠️ Configure OPENAI_API_KEY\n",
-    "groupWarning": "\n⚠️ *Group:* Everyone sees and shares the same conversation\n"
+    "groupWarning": "\n⚠️ *Group:* Everyone sees and shares the same conversation\n",
+    "command": {
+      "help": "Execute Claude CLI commands directly",
+      "usage": "Usage: /command <flags> <prompt> OR /command /slash-command <args>",
+      "executing": "🚀 Executing: `{command}`",
+      "completed": "✅ Command completed",
+      "failed": "❌ Command failed: {error}",
+      "forbidden": "❌ Forbidden flag: `{flag}`\n\nThis flag is managed by the bot and cannot be overridden.",
+      "invalidFlag": "⚠️ Invalid flag: `{flag}`\n\nUse /command --help to see available flags.",
+      "noArgs": "⚠️ No arguments provided.\n\n{usage}",
+      "helpHeader": "📋 *Claude CLI Commands*\n\nExecute Claude Code CLI with custom flags.",
+      "customCommandsHeader": "\n🔧 *Custom Slash Commands*\n\nFrom `.claude/commands/` folder:",
+      "shortcutsHeader": "\n💡 *Quick Shortcuts*",
+      "noCustomCommands": "\n_No custom commands found in `.claude/commands/`_"
+    },
+    "model": {
+      "help": "Switch Claude model",
+      "usage": "Usage: /model [sonnet|opus|haiku]",
+      "current": "Current model: {model}",
+      "restarting": "🔄 Restarting session with model: *{model}*...",
+      "changed": "✅ Session restarted with model: *{model}*",
+      "invalid": "❌ Invalid model: `{model}`\n\nAvailable: sonnet, opus, haiku"
+    },
+    "resume": {
+      "help": "Resume a previous conversation",
+      "usage": "Usage: /resume <session-id>",
+      "resuming": "🔄 Resuming session: `{sessionId}`...",
+      "resumed": "✅ Session resumed: `{sessionId}`",
+      "notFound": "❌ Session not found: `{sessionId}`"
+    },
+    "continue": {
+      "help": "Continue most recent conversation",
+      "continuing": "🔄 Continuing most recent conversation...",
+      "continued": "✅ Conversation continued",
+      "noHistory": "❌ No conversation history found"
+    },
+    "tools": {
+      "help": "Manage available tools",
+      "usage": "Usage: /tools [list|enable|disable] [tool-names]",
+      "listing": "🛠️ *Available Tools*:\n\n{tools}",
+      "enabling": "🔄 Restarting with tools: {tools}...",
+      "enabled": "✅ Session restarted. Enabled tools: {tools}",
+      "disabling": "🔄 Restarting with disabled tools: {tools}...",
+      "disabled": "✅ Session restarted. Disabled tools: {tools}",
+      "current": "Current tools: {tools}",
+      "invalid": "❌ Invalid command. Use: /tools [list|enable|disable] [tool-names]"
+    },
+    "permissions": {
+      "help": "Control permission approval mode",
+      "usage": "Usage: /permissions [strict|relaxed|skip]",
+      "current": "Current mode: {mode}",
+      "changing": "🔄 Restarting with permission mode: *{mode}*...",
+      "changed": "✅ Session restarted with permission mode: *{mode}*",
+      "invalid": "❌ Invalid mode: `{mode}`\n\nAvailable: strict, relaxed, skip",
+      "strict": "strict (ask for all permissions)",
+      "relaxed": "relaxed (auto-approve reads)",
+      "skip": "skip (auto-approve all)"
+    }
   },
   "media": {
     "photoProcessing": "📸 Processing photo...",

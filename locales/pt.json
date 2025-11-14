@@ -20,13 +20,70 @@
   },
   "commands": {
     "start": "🚀 *Sessão Claude Code Stream Iniciada!*\n\n{chatIcon} *Tipo:* {chatType}\n✨ *Modo Stream JSON Ativo*\n• Mensagens em tempo real via stream\n• Atualizações parciais enquanto Claude pensa\n• Notificações de ferramentas sendo executadas\n• 📸 Suporte a imagens (visão)\n• 🎤 Suporte a áudio/voz{whisperStatus}\n\n📝 Session ID: `{sessionId}`\n📁 Diretório: `{directory}`\n{whisperLine}{groupWarning}\n*Comandos:*\n/start - Nova sessão\n/stop - Encerrar sessão\n/status - Ver status\n/help - Ajuda\n/lang - Mudar idioma",
-    "help": "❓ *Como usar*\n\nControle o Claude Code via Telegram com streaming em tempo real!\n\n*Fluxo:*\n1. /start - Inicia sessão stream\n2. Digite sua mensagem/pedido\n3. 📸 Envie fotos - Claude analisa com visão\n4. 🎤 Envie áudio - Salvo localmente\n5. Veja respostas em tempo real\n6. Responda Y/N para aprovações\n\n*Comandos:*\n/start - Iniciar nova sessão\n/stop - Encerrar sessão\n/status - Ver status\n/help - Esta ajuda\n/lang - Mudar idioma\n\n*Mídia suportada:*\n📸 Fotos - Análise com visão do Claude\n🎤 Áudio/Voz - Transcrição automática via Whisper{whisperStatus}",
+    "help": "❓ *Como usar*\n\nControle o Claude Code via Telegram com streaming em tempo real!\n\n*Fluxo:*\n1. /start - Inicia sessão stream\n2. Digite sua mensagem/pedido\n3. 📸 Envie fotos - Claude analisa com visão\n4. 🎤 Envie áudio - Salvo localmente\n5. Veja respostas em tempo real\n6. Responda Y/N para aprovações\n\n*Comandos Básicos:*\n/start - Iniciar nova sessão\n/stop - Encerrar sessão\n/status - Ver status\n/help - Esta ajuda\n/lang - Mudar idioma\n\n*Comandos Avançados:*\n/command - Executar Claude CLI com flags personalizadas\n/model - Alternar modelo Claude (sonnet/opus/haiku)\n/resume - Retomar uma sessão anterior\n/continue - Continuar conversa mais recente\n/tools - Gerenciar ferramentas disponíveis\n/permissions - Controlar modo de permissão\n\n*Mídia suportada:*\n📸 Fotos - Análise com visão do Claude\n🎤 Áudio/Voz - Transcrição automática via Whisper{whisperStatus}",
     "chatTypePrivate": "Chat Privado",
     "chatTypeGroup": "Grupo (sessão compartilhada)",
     "whisperActive": " com transcrição Whisper",
     "whisperConfigLine": "🎙️ Whisper: ✅ Ativo\n",
     "whisperMissingLine": "🎙️ Whisper: ⚠️ Configure OPENAI_API_KEY\n",
-    "groupWarning": "\n⚠️ *Grupo:* Todos veem e compartilham a mesma conversa\n"
+    "groupWarning": "\n⚠️ *Grupo:* Todos veem e compartilham a mesma conversa\n",
+    "command": {
+      "help": "Executar comandos Claude CLI diretamente",
+      "usage": "Uso: /command <flags> <prompt> OU /command /comando-barra <args>",
+      "executing": "🚀 Executando: `{command}`",
+      "completed": "✅ Comando concluído",
+      "failed": "❌ Comando falhou: {error}",
+      "forbidden": "❌ Flag proibida: `{flag}`\n\nEsta flag é gerenciada pelo bot e não pode ser substituída.",
+      "invalidFlag": "⚠️ Flag inválida: `{flag}`\n\nUse /command --help para ver as flags disponíveis.",
+      "noArgs": "⚠️ Nenhum argumento fornecido.\n\n{usage}",
+      "helpHeader": "📋 *Comandos Claude CLI*\n\nExecute Claude Code CLI com flags personalizadas.",
+      "customCommandsHeader": "\n🔧 *Comandos Barra Personalizados*\n\nDa pasta `.claude/commands/`:",
+      "shortcutsHeader": "\n💡 *Atalhos Rápidos*",
+      "noCustomCommands": "\n_Nenhum comando personalizado encontrado em `.claude/commands/`_"
+    },
+    "model": {
+      "help": "Alternar modelo Claude",
+      "usage": "Uso: /model [sonnet|opus|haiku]",
+      "current": "Modelo atual: {model}",
+      "restarting": "🔄 Reiniciando sessão com modelo: *{model}*...",
+      "changed": "✅ Sessão reiniciada com modelo: *{model}*",
+      "invalid": "❌ Modelo inválido: `{model}`\n\nDisponíveis: sonnet, opus, haiku"
+    },
+    "resume": {
+      "help": "Retomar uma conversa anterior",
+      "usage": "Uso: /resume <session-id>",
+      "resuming": "🔄 Retomando sessão: `{sessionId}`...",
+      "resumed": "✅ Sessão retomada: `{sessionId}`",
+      "notFound": "❌ Sessão não encontrada: `{sessionId}`"
+    },
+    "continue": {
+      "help": "Continuar conversa mais recente",
+      "continuing": "🔄 Continuando conversa mais recente...",
+      "continued": "✅ Conversa continuada",
+      "noHistory": "❌ Nenhum histórico de conversa encontrado"
+    },
+    "tools": {
+      "help": "Gerenciar ferramentas disponíveis",
+      "usage": "Uso: /tools [list|enable|disable] [nomes-ferramentas]",
+      "listing": "🛠️ *Ferramentas Disponíveis*:\n\n{tools}",
+      "enabling": "🔄 Reiniciando com ferramentas: {tools}...",
+      "enabled": "✅ Sessão reiniciada. Ferramentas habilitadas: {tools}",
+      "disabling": "🔄 Reiniciando com ferramentas desabilitadas: {tools}...",
+      "disabled": "✅ Sessão reiniciada. Ferramentas desabilitadas: {tools}",
+      "current": "Ferramentas atuais: {tools}",
+      "invalid": "❌ Comando inválido. Use: /tools [list|enable|disable] [nomes-ferramentas]"
+    },
+    "permissions": {
+      "help": "Controlar modo de aprovação de permissões",
+      "usage": "Uso: /permissions [strict|relaxed|skip]",
+      "current": "Modo atual: {mode}",
+      "changing": "🔄 Reiniciando com modo de permissão: *{mode}*...",
+      "changed": "✅ Sessão reiniciada com modo de permissão: *{mode}*",
+      "invalid": "❌ Modo inválido: `{mode}`\n\nDisponíveis: strict, relaxed, skip",
+      "strict": "strict (pedir todas as permissões)",
+      "relaxed": "relaxed (aprovar leituras automaticamente)",
+      "skip": "skip (aprovar tudo automaticamente)"
+    }
   },
   "media": {
     "photoProcessing": "📸 Processando foto...",

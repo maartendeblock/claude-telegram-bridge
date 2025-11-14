@@ -157,6 +157,60 @@ npm run dev
 | `/lang pt` | Schakel over naar Portugees |
 | `/lang nl` | Schakel over naar Nederlands |
 
+### Geavanceerde Commando's
+
+De bot ondersteunt nu geavanceerde Claude Code CLI commando's!
+
+#### Directe CLI Uitvoering
+```bash
+/command <flags> <prompt>
+/command --help                    # Bekijk alle Claude CLI opties
+/command --model opus "Schrijf een gedicht"
+/command --tools Bash,Read "Lijst bestanden"
+/command /review-pr 123            # Voer aangepast commando uit
+```
+
+#### Snelle Snelkoppelingen
+
+**Wissel Model:**
+```bash
+/model                    # Bekijk huidig model
+/model sonnet            # Gebruik Claude Sonnet
+/model opus              # Gebruik Claude Opus
+/model haiku             # Gebruik Claude Haiku
+```
+
+**Hervat Gesprekken:**
+```bash
+/resume <session-id>     # Hervat specifieke sessie
+/continue                # Ga door met meest recente gesprek
+```
+
+**Beheer Tools:**
+```bash
+/tools                   # Lijst beschikbare tools
+/tools list              # Lijst beschikbare tools
+/tools enable Bash,Read  # Schakel alleen specifieke tools in
+/tools disable Write     # Schakel specifieke tools uit
+```
+
+**Beheer Toestemmingen:**
+```bash
+/permissions             # Bekijk huidige modus
+/permissions strict      # Vraag om elke toestemming
+/permissions relaxed     # Auto-goedkeuren van lezen
+/permissions skip        # Auto-goedkeuren van alles (standaard)
+```
+
+#### Aangepaste Commando's
+
+De bot ontdekt automatisch aangepaste commando's in `.claude/commands/`:
+```bash
+/command /review-pr 123
+/command /fix-bug "Bug beschrijving"
+/command /optimize main.js
+```
+
 ### 🌐 Taalselectie
 
 De bot ondersteunt **3 talen** voor de volledige interface en berichten:

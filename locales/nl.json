@@ -20,13 +20,70 @@
   },
   "commands": {
     "start": "🚀 *Claude Code Stream-sessie Gestart!*\n\n{chatIcon} *Type:* {chatType}\n✨ *Stream JSON-modus Actief*\n• Real-time berichten via stream\n• Gedeeltelijke updates terwijl Claude denkt\n• Meldingen voor uitgevoerde tools\n• 📸 Afbeeldingsondersteuning (visie)\n• 🎤 Audio/spraakondersteuning{whisperStatus}\n\n📝 Sessie-ID: `{sessionId}`\n📁 Map: `{directory}`\n{whisperLine}{groupWarning}\n*Commando's:*\n/start - Nieuwe sessie\n/stop - Stop sessie\n/status - Bekijk status\n/help - Help\n/lang - Verander taal",
-    "help": "❓ *Hoe te gebruiken*\n\nBestuur Claude Code via Telegram met real-time streaming!\n\n*Werkwijze:*\n1. /start - Start stream-sessie\n2. Typ je bericht/verzoek\n3. 📸 Stuur foto's - Claude analyseert met visie\n4. 🎤 Stuur audio - Lokaal opgeslagen\n5. Zie real-time reacties\n6. Antwoord Y/N voor goedkeuringen\n\n*Commando's:*\n/start - Start nieuwe sessie\n/stop - Stop sessie\n/status - Bekijk status\n/help - Deze help\n/lang - Verander taal\n\n*Ondersteunde media:*\n📸 Foto's - Analyse met Claude visie\n🎤 Audio/Spraak - Automatische transcriptie via Whisper{whisperStatus}",
+    "help": "❓ *Hoe te gebruiken*\n\nBestuur Claude Code via Telegram met real-time streaming!\n\n*Werkwijze:*\n1. /start - Start stream-sessie\n2. Typ je bericht/verzoek\n3. 📸 Stuur foto's - Claude analyseert met visie\n4. 🎤 Stuur audio - Lokaal opgeslagen\n5. Zie real-time reacties\n6. Antwoord Y/N voor goedkeuringen\n\n*Basis Commando's:*\n/start - Start nieuwe sessie\n/stop - Stop sessie\n/status - Bekijk status\n/help - Deze help\n/lang - Verander taal\n\n*Geavanceerde Commando's:*\n/command - Voer Claude CLI uit met aangepaste vlaggen\n/model - Wissel Claude-model (sonnet/opus/haiku)\n/resume - Hervat een eerder gesprek\n/continue - Ga verder met meest recente gesprek\n/tools - Beheer beschikbare tools\n/permissions - Beheer toestemmingsmodus\n\n*Ondersteunde media:*\n📸 Foto's - Analyse met Claude visie\n🎤 Audio/Spraak - Automatische transcriptie via Whisper{whisperStatus}",
     "chatTypePrivate": "Privéchat",
     "chatTypeGroup": "Groep (gedeelde sessie)",
     "whisperActive": " met Whisper-transcriptie",
     "whisperConfigLine": "🎙️ Whisper: ✅ Actief\n",
     "whisperMissingLine": "🎙️ Whisper: ⚠️ Configureer OPENAI_API_KEY\n",
-    "groupWarning": "\n⚠️ *Groep:* Iedereen ziet en deelt hetzelfde gesprek\n"
+    "groupWarning": "\n⚠️ *Groep:* Iedereen ziet en deelt hetzelfde gesprek\n",
+    "command": {
+      "help": "Voer Claude CLI-commando's direct uit",
+      "usage": "Gebruik: /command <vlaggen> <prompt> OF /command /slash-commando <args>",
+      "executing": "🚀 Uitvoeren: `{command}`",
+      "completed": "✅ Commando voltooid",
+      "failed": "❌ Commando mislukt: {error}",
+      "forbidden": "❌ Verboden vlag: `{flag}`\n\nDeze vlag wordt beheerd door de bot en kan niet worden overschreven.",
+      "invalidFlag": "⚠️ Ongeldige vlag: `{flag}`\n\nGebruik /command --help om beschikbare vlaggen te zien.",
+      "noArgs": "⚠️ Geen argumenten opgegeven.\n\n{usage}",
+      "helpHeader": "📋 *Claude CLI Commando's*\n\nVoer Claude Code CLI uit met aangepaste vlaggen.",
+      "customCommandsHeader": "\n🔧 *Aangepaste Slash-commando's*\n\nVanuit `.claude/commands/` map:",
+      "shortcutsHeader": "\n💡 *Snelkoppelingen*",
+      "noCustomCommands": "\n_Geen aangepaste commando's gevonden in `.claude/commands/`_"
+    },
+    "model": {
+      "help": "Wissel Claude-model",
+      "usage": "Gebruik: /model [sonnet|opus|haiku]",
+      "current": "Huidig model: {model}",
+      "restarting": "🔄 Sessie herstarten met model: *{model}*...",
+      "changed": "✅ Sessie herstart met model: *{model}*",
+      "invalid": "❌ Ongeldig model: `{model}`\n\nBeschikbaar: sonnet, opus, haiku"
+    },
+    "resume": {
+      "help": "Hervat een eerder gesprek",
+      "usage": "Gebruik: /resume <sessie-id>",
+      "resuming": "🔄 Sessie hervatten: `{sessionId}`...",
+      "resumed": "✅ Sessie hervat: `{sessionId}`",
+      "notFound": "❌ Sessie niet gevonden: `{sessionId}`"
+    },
+    "continue": {
+      "help": "Ga verder met meest recente gesprek",
+      "continuing": "🔄 Meest recente gesprek voortzetten...",
+      "continued": "✅ Gesprek voortgezet",
+      "noHistory": "❌ Geen gespreksgeschiedenis gevonden"
+    },
+    "tools": {
+      "help": "Beheer beschikbare tools",
+      "usage": "Gebruik: /tools [list|enable|disable] [tool-namen]",
+      "listing": "🛠️ *Beschikbare Tools*:\n\n{tools}",
+      "enabling": "🔄 Herstarten met tools: {tools}...",
+      "enabled": "✅ Sessie herstart. Ingeschakelde tools: {tools}",
+      "disabling": "🔄 Herstarten met uitgeschakelde tools: {tools}...",
+      "disabled": "✅ Sessie herstart. Uitgeschakelde tools: {tools}",
+      "current": "Huidige tools: {tools}",
+      "invalid": "❌ Ongeldig commando. Gebruik: /tools [list|enable|disable] [tool-namen]"
+    },
+    "permissions": {
+      "help": "Beheer toestemmingsgoedkeuringsmodus",
+      "usage": "Gebruik: /permissions [strict|relaxed|skip]",
+      "current": "Huidige modus: {mode}",
+      "changing": "🔄 Herstarten met toestemmingsmodus: *{mode}*...",
+      "changed": "✅ Sessie herstart met toestemmingsmodus: *{mode}*",
+      "invalid": "❌ Ongeldige modus: `{mode}`\n\nBeschikbaar: strict, relaxed, skip",
+      "strict": "strict (vraag alle toestemmingen)",
+      "relaxed": "relaxed (automatisch leesrechten goedkeuren)",
+      "skip": "skip (automatisch alles goedkeuren)"
+    }
   },
   "media": {
     "photoProcessing": "📸 Foto verwerken...",
