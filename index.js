@@ -787,7 +787,7 @@ bot.on('message', async (msg) => {
       // Build args from flags
       const customArgs = [];
       parsed.flags.forEach(flag => {
-        customArgs.push(flag.name);
+        customArgs.push('--' + flag.name);
         if (flag.value !== true) {
           customArgs.push(flag.value);
         }
