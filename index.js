@@ -89,18 +89,25 @@ async function sendMessage(chatId, text, options = {}) {
 // CRIAR SESSÃO STREAM JSON
 // ============================
 
-function createClaudeSession(chatId) {
-  console.log(`\n🚀 [${chatId}] Creating stream session...`);
+function getClaudeCommands() {
+  // If user specified a full path, use it as-is
+  if (CLAUDE_CODE_PATH.includes('/') || CLAUDE_CODE_PATH.includes('\\')) {
+    return [CLAUDE_CODE_PATH];
+  }
 
-  const sessionId = generateUUID();
+  // On Windows, try both with and without .cmd extension
+  if (process.platform === 'win32') {
+    if (CLAUDE_CODE_PATH.endsWith('.cmd')) {
+      return [CLAUDE_CODE_PATH, CLAUDE_CODE_PATH.slice(0, -4)];
+    }
+    return [CLAUDE_CODE_PATH, CLAUDE_CODE_PATH + '.cmd'];
+  }
 
-  // Iniciar Claude em modo stream-json
-  // No Windows, usar .cmd explicitamente
-  const claudeCmd = process.platform === 'win32' && !CLAUDE_CODE_PATH.endsWith('.cmd')
-    ? CLAUDE_CODE_PATH + '.cmd'
-    : CLAUDE_CODE_PATH;
+  return [CLAUDE_CODE_PATH];
+}
 
-  const claudeProcess = spawn(claudeCmd, [
+function spawnClaudeProcess(claudeCmd, sessionId) {
+  return spawn(claudeCmd, [
     '--print',
     '--verbose',
     '--input-format', 'stream-json',
@@ -114,21 +121,80 @@ function createClaudeSession(chatId) {
     shell: true,
     windowsHide: true
   });
+}
+
+function createClaudeSession(chatId) {
+  console.log(`\n🚀 [${chatId}] Creating stream session...`);
+
+  const sessionId = generateUUID();
+  const commands = getClaudeCommands();
+
+  let claudeProcess = null;
+  let usedCommand = null;
+
+  // Try each command until one works
+  for (const cmd of commands) {
+    try {
+      claudeProcess = spawnClaudeProcess(cmd, sessionId);
+      usedCommand = cmd;
+      console.log(`🔧 [${chatId}] Trying command: ${cmd}`);
+      break;
+    } catch (error) {
+      console.log(`⚠️ [${chatId}] Command ${cmd} failed to spawn: ${error.message}`);
+    }
+  }
+
+  if (!claudeProcess) {
+    console.error(`❌ [${chatId}] Failed to spawn Claude with any command`);
+    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: 'Failed to start Claude CLI' }));
+    return null;
+  }
 
   const session = {
     process: claudeProcess,
     sessionId: sessionId,
     buffer: '',
     active: true,
-    messageBuffer: new Map() // messageId -> content acumulado
+    messageBuffer: new Map(),
+    command: usedCommand
   };
 
   sessions.set(chatId, session);
 
-  // ============================
-  // PROCESSAR OUTPUT STREAM JSON
-  // ============================
+  // Handle spawn errors (e.g., command not found)
+  claudeProcess.on('error', (error) => {
+    console.error(`❌ [${chatId}] Process error:`, error);
 
+    // If command not found, try alternate command
+    if (error.code === 'ENOENT' && commands.length > 1) {
+      const currentIndex = commands.indexOf(session.command);
+      const nextCommand = commands[currentIndex + 1];
+
+      if (nextCommand) {
+        console.log(`🔄 [${chatId}] Retrying with: ${nextCommand}`);
+        sessions.delete(chatId);
+
+        // Retry with alternate command
+        const retryProcess = spawnClaudeProcess(nextCommand, sessionId);
+        session.process = retryProcess;
+        session.command = nextCommand;
+        sessions.set(chatId, session);
+        setupProcessHandlers(chatId, session, retryProcess);
+        return;
+      }
+    }
+
+    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: error.message }));
+    sessions.delete(chatId);
+  });
+
+  setupProcessHandlers(chatId, session, claudeProcess);
+
+  console.log(`✅ [${chatId}] Session created! Session ID: ${sessionId}`);
+  return session;
+}
+
+function setupProcessHandlers(chatId, session, claudeProcess) {
   claudeProcess.stdout.on('data', (data) => {
     session.buffer += data.toString();
     processStreamBuffer(chatId, session);
@@ -139,20 +205,11 @@ function createClaudeSession(chatId) {
     console.log(`⚠️ [${chatId}] Stderr: ${text}`);
   });
 
-  claudeProcess.on('error', (error) => {
-    console.error(`❌ [${chatId}] Process error:`, error);
-    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: error.message }));
-    sessions.delete(chatId);
-  });
-
   claudeProcess.on('close', (code) => {
     console.log(`🔴 [${chatId}] Session closed (code: ${code})`);
     bot.sendMessage(chatId, t(chatId, 'session.closed', { code }));
     sessions.delete(chatId);
   });
-
-  console.log(`✅ [${chatId}] Session created! Session ID: ${sessionId}`);
-  return session;
 }
 
 // ============================
