@@ -1032,6 +1032,19 @@ bot.on('message', async (msg) => {
     const whisperLine = openai ? t(chatId, 'commands.whisperConfigLine') : t(chatId, 'commands.whisperMissingLine');
     const groupWarning = isGroup ? t(chatId, 'commands.groupWarning') : '';
 
+    // Discover Claude custom commands (prefix with /cc_ for Telegram)
+    const customCommands = discoverCustomCommands();
+    let claudeCommandsSection = '';
+    if (customCommands.length > 0) {
+      claudeCommandsSection = '\n' + t(chatId, 'commands.claudeCommandsHeader') + '\n';
+      customCommands.forEach(cmd => {
+        // Convert /command-name to /cc_command_name (Telegram only allows letters, numbers, underscores)
+        // Escape underscores with backslash to prevent italic parsing while keeping clickable
+        const telegramCmd = cmd.replace(/^\//, '/cc_').replace(/-/g, '_').replace(/_/g, '\\_');
+        claudeCommandsSection += `${telegramCmd}\n`;
+      });
+    }
+
     await bot.sendMessage(chatId,
       t(chatId, 'commands.start', {
         chatIcon,
@@ -1040,7 +1053,8 @@ bot.on('message', async (msg) => {
         sessionId: session.sessionId,
         directory: WORKING_DIR,
         whisperLine,
-        groupWarning
+        groupWarning,
+        claudeCommands: claudeCommandsSection
       }),
       { parse_mode: 'Markdown' }
     );
@@ -1111,6 +1125,49 @@ bot.on('message', async (msg) => {
     } else {
       await bot.sendMessage(chatId, t(chatId, 'language.invalidLanguage'));
     }
+    return;
+  }
+
+  // ============================
+  // CLAUDE CUSTOM COMMANDS (e.g., /cc_extract_pdf, /cc_agenda)
+  // ============================
+  if (text && text.startsWith('/cc_')) {
+    // Check if this is a Claude custom command
+    const customCommands = discoverCustomCommands();
+    const commandMatch = text.match(/^\/cc_(\w+)(?:\s+(.*))?$/);
+
+    if (commandMatch) {
+      const commandName = commandMatch[1];
+      // Convert underscores back to hyphens for Claude format
+      const claudeCommand = `/${commandName.replace(/_/g, '-')}`;
+      const argsText = commandMatch[2] || '';
+
+      // Check if it matches a custom command
+      if (customCommands.includes(claudeCommand)) {
+        await bot.sendMessage(chatId, t(chatId, 'commands.command.executing', { command: claudeCommand }));
+
+        // Build args for slash command
+        const slashArgs = ['--dangerously-skip-permissions', claudeCommand];
+        if (argsText.trim()) {
+          slashArgs.push(...argsText.trim().split(/\s+/));
+        }
+
+        // Kill existing session
+        const oldSession = sessions.get(chatId);
+        if (oldSession?.process) {
+          oldSession.process.kill();
+          sessions.delete(chatId);
+          pendingMessages.delete(chatId);
+        }
+
+        // Create session with slash command
+        const session = createClaudeSessionWithFlags(chatId, slashArgs);
+        return;
+      }
+    }
+
+    // Unknown /cc_ command
+    await bot.sendMessage(chatId, t(chatId, 'commands.claudeCommandNotFound', { command: text.split(' ')[0] }));
     return;
   }
 
