@@ -110,10 +110,76 @@ function discoverCustomCommands() {
 // CRIAR SESSÃO STREAM JSON
 // ============================
 
+function getClaudeCommands() {
+  // If user specified a full path, use it as-is
+  if (CLAUDE_CODE_PATH.includes('/') || CLAUDE_CODE_PATH.includes('\\')) {
+    return [CLAUDE_CODE_PATH];
+  }
+
+  // On Windows, try both with and without .cmd extension
+  if (process.platform === 'win32') {
+    if (CLAUDE_CODE_PATH.endsWith('.cmd')) {
+      return [CLAUDE_CODE_PATH, CLAUDE_CODE_PATH.slice(0, -4)];
+    }
+    return [CLAUDE_CODE_PATH, CLAUDE_CODE_PATH + '.cmd'];
+  }
+
+  return [CLAUDE_CODE_PATH];
+}
+
+function spawnClaudeProcess(claudeCmd, args) {
+  return spawn(claudeCmd, args, {
+    cwd: WORKING_DIR,
+    shell: true,
+    windowsHide: true
+  });
+}
+
+function setupProcessHandlers(chatId, session, claudeProcess, commands) {
+  claudeProcess.stdout.on('data', (data) => {
+    session.buffer += data.toString();
+    processStreamBuffer(chatId, session);
+  });
+
+  claudeProcess.stderr.on('data', (data) => {
+    const text = data.toString();
+    console.log(`⚠️ [${chatId}] Stderr: ${text}`);
+  });
+
+  claudeProcess.on('error', (error) => {
+    console.error(`❌ [${chatId}] Process error:`, error);
+
+    // If command not found, try alternate command
+    if (error.code === 'ENOENT' && commands && commands.length > 1) {
+      const currentIndex = commands.indexOf(session.command);
+      const nextCommand = commands[currentIndex + 1];
+
+      if (nextCommand) {
+        console.log(`🔄 [${chatId}] Retrying with: ${nextCommand}`);
+        const retryProcess = spawnClaudeProcess(nextCommand, session.args);
+        session.process = retryProcess;
+        session.command = nextCommand;
+        setupProcessHandlers(chatId, session, retryProcess, commands);
+        return;
+      }
+    }
+
+    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: error.message }));
+    sessions.delete(chatId);
+  });
+
+  claudeProcess.on('close', (code) => {
+    console.log(`🔴 [${chatId}] Session closed (code: ${code})`);
+    bot.sendMessage(chatId, t(chatId, 'session.closed', { code }));
+    sessions.delete(chatId);
+  });
+}
+
 function createClaudeSessionWithFlags(chatId, customFlags = []) {
   console.log(`\n🚀 [${chatId}] Creating stream session with custom flags...`);
 
   const sessionId = generateUUID();
+  const commands = getClaudeCommands();
 
   // Build base args
   const args = [
@@ -127,52 +193,39 @@ function createClaudeSessionWithFlags(chatId, customFlags = []) {
     ...customFlags
   ];
 
-  // No Windows, usar .cmd explicitamente
-  const claudeCmd = process.platform === 'win32' && !CLAUDE_CODE_PATH.endsWith('.cmd')
-    ? CLAUDE_CODE_PATH + '.cmd'
-    : CLAUDE_CODE_PATH;
+  let claudeProcess = null;
+  let usedCommand = null;
 
-  const claudeProcess = spawn(claudeCmd, args, {
-    cwd: WORKING_DIR,
-    shell: true,
-    windowsHide: true
-  });
+  // Try each command until one works
+  for (const cmd of commands) {
+    try {
+      claudeProcess = spawnClaudeProcess(cmd, args);
+      usedCommand = cmd;
+      console.log(`🔧 [${chatId}] Trying command: ${cmd}`);
+      break;
+    } catch (error) {
+      console.log(`⚠️ [${chatId}] Command ${cmd} failed to spawn: ${error.message}`);
+    }
+  }
+
+  if (!claudeProcess) {
+    console.error(`❌ [${chatId}] Failed to spawn Claude with any command`);
+    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: 'Failed to start Claude CLI' }));
+    return null;
+  }
 
   const session = {
     process: claudeProcess,
     sessionId: sessionId,
     buffer: '',
     active: true,
-    messageBuffer: new Map()
+    messageBuffer: new Map(),
+    command: usedCommand,
+    args: args
   };
 
   sessions.set(chatId, session);
-
-  // ============================
-  // PROCESSAR OUTPUT STREAM JSON
-  // ============================
-
-  claudeProcess.stdout.on('data', (data) => {
-    session.buffer += data.toString();
-    processStreamBuffer(chatId, session);
-  });
-
-  claudeProcess.stderr.on('data', (data) => {
-    const text = data.toString();
-    console.log(`⚠️ [${chatId}] Stderr: ${text}`);
-  });
-
-  claudeProcess.on('error', (error) => {
-    console.error(`❌ [${chatId}] Process error:`, error);
-    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: error.message }));
-    sessions.delete(chatId);
-  });
-
-  claudeProcess.on('close', (code) => {
-    console.log(`🔴 [${chatId}] Session closed (code: ${code})`);
-    bot.sendMessage(chatId, t(chatId, 'session.closed', { code }));
-    sessions.delete(chatId);
-  });
+  setupProcessHandlers(chatId, session, claudeProcess, commands);
 
   console.log(`✅ [${chatId}] Session created! Session ID: ${sessionId}`);
   return session;
@@ -182,6 +235,7 @@ function createClaudeSession(chatId) {
   console.log(`\n🚀 [${chatId}] Creating stream session...`);
 
   const sessionId = generateUUID();
+  const commands = getClaudeCommands();
 
   // Get saved preferences
   const prefs = getSessionPreferences(chatId);
@@ -221,53 +275,39 @@ function createClaudeSession(chatId) {
     args.push('--permission-mode', 'acceptEdits');
   }
 
-  // Iniciar Claude em modo stream-json
-  // No Windows, usar .cmd explicitamente
-  const claudeCmd = process.platform === 'win32' && !CLAUDE_CODE_PATH.endsWith('.cmd')
-    ? CLAUDE_CODE_PATH + '.cmd'
-    : CLAUDE_CODE_PATH;
+  let claudeProcess = null;
+  let usedCommand = null;
 
-  const claudeProcess = spawn(claudeCmd, args, {
-    cwd: WORKING_DIR,
-    shell: true,
-    windowsHide: true
-  });
+  // Try each command until one works
+  for (const cmd of commands) {
+    try {
+      claudeProcess = spawnClaudeProcess(cmd, args);
+      usedCommand = cmd;
+      console.log(`🔧 [${chatId}] Trying command: ${cmd}`);
+      break;
+    } catch (error) {
+      console.log(`⚠️ [${chatId}] Command ${cmd} failed to spawn: ${error.message}`);
+    }
+  }
+
+  if (!claudeProcess) {
+    console.error(`❌ [${chatId}] Failed to spawn Claude with any command`);
+    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: 'Failed to start Claude CLI' }));
+    return null;
+  }
 
   const session = {
     process: claudeProcess,
     sessionId: sessionId,
     buffer: '',
     active: true,
-    messageBuffer: new Map() // messageId -> content acumulado
+    messageBuffer: new Map(),
+    command: usedCommand,
+    args: args
   };
 
   sessions.set(chatId, session);
-
-  // ============================
-  // PROCESSAR OUTPUT STREAM JSON
-  // ============================
-
-  claudeProcess.stdout.on('data', (data) => {
-    session.buffer += data.toString();
-    processStreamBuffer(chatId, session);
-  });
-
-  claudeProcess.stderr.on('data', (data) => {
-    const text = data.toString();
-    console.log(`⚠️ [${chatId}] Stderr: ${text}`);
-  });
-
-  claudeProcess.on('error', (error) => {
-    console.error(`❌ [${chatId}] Process error:`, error);
-    bot.sendMessage(chatId, t(chatId, 'errors.sending', { error: error.message }));
-    sessions.delete(chatId);
-  });
-
-  claudeProcess.on('close', (code) => {
-    console.log(`🔴 [${chatId}] Session closed (code: ${code})`);
-    bot.sendMessage(chatId, t(chatId, 'session.closed', { code }));
-    sessions.delete(chatId);
-  });
+  setupProcessHandlers(chatId, session, claudeProcess, commands);
 
   console.log(`✅ [${chatId}] Session created! Session ID: ${sessionId}`);
   return session;
