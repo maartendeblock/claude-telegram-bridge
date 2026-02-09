@@ -97,12 +97,143 @@ function discoverCustomCommands() {
     const files = fs.readdirSync(commandsDir);
     const commands = files
       .filter(f => f.endsWith('.md'))
-      .map(f => `/${f.replace('.md', '')}`);
+      .map(f => {
+        const name = f.replace('.md', '');
+        // Try to extract description from file (first line or frontmatter)
+        let description = `Claude command: ${name}`;
+        try {
+          const content = fs.readFileSync(path.join(commandsDir, f), 'utf-8');
+          const lines = content.split('\n');
+          // Look for a description in the first few lines
+          for (const line of lines.slice(0, 10)) {
+            const trimmed = line.trim();
+            // Skip empty lines, headers, and frontmatter markers
+            if (!trimmed || trimmed.startsWith('#') || trimmed === '---') continue;
+            // Use first non-empty, non-header line as description
+            description = trimmed.substring(0, 100); // Telegram limit
+            break;
+          }
+        } catch (e) {
+          // Ignore read errors, use default description
+        }
+        return { command: name, description };
+      });
 
     return commands;
   } catch (error) {
-    console.error('⚠️ Error discovering custom commands:', error.message);
+    console.error('Error discovering custom commands:', error.message);
     return [];
+  }
+}
+
+// ============================
+// TELEGRAM BOT COMMANDS REGISTRATION
+// ============================
+
+// Built-in bot commands
+const BUILTIN_COMMANDS = [
+  { command: 'start', description: 'Start a new Claude session' },
+  { command: 'stop', description: 'Stop the current session' },
+  { command: 'status', description: 'Show session status' },
+  { command: 'help', description: 'Show help message' },
+  { command: 'lang', description: 'Change language (en/pt/nl)' },
+  { command: 'model', description: 'Switch Claude model (sonnet/opus/haiku)' },
+  { command: 'continue', description: 'Continue last conversation' },
+  { command: 'resume', description: 'Resume a previous session by ID' },
+  { command: 'tools', description: 'Manage available tools' },
+  { command: 'permissions', description: 'Set permission mode' },
+  { command: 'command', description: 'Execute Claude CLI with custom flags' },
+];
+
+// Track last registered commands to avoid unnecessary updates
+let lastRegisteredCommands = '';
+
+/**
+ * Build the full list of Telegram bot commands
+ * @returns {Array<{command: string, description: string}>}
+ */
+function buildBotCommands() {
+  const customCommands = discoverCustomCommands();
+
+  // Combine built-in and custom commands
+  // Custom commands are prefixed to distinguish them
+  const allCommands = [
+    ...BUILTIN_COMMANDS,
+    ...customCommands.map(cmd => ({
+      command: cmd.command,
+      description: cmd.description
+    }))
+  ];
+
+  // Telegram allows max 100 commands
+  return allCommands.slice(0, 100);
+}
+
+/**
+ * Register bot commands with Telegram API
+ * This makes commands appear in the "/" menu in Telegram
+ */
+async function registerBotCommands() {
+  try {
+    const commands = buildBotCommands();
+    const commandsJson = JSON.stringify(commands);
+
+    // Skip if commands haven't changed
+    if (commandsJson === lastRegisteredCommands) {
+      return;
+    }
+
+    await bot.setMyCommands(commands);
+    lastRegisteredCommands = commandsJson;
+
+    const customCount = commands.length - BUILTIN_COMMANDS.length;
+    console.log(`[OK] Registered ${commands.length} bot commands (${BUILTIN_COMMANDS.length} built-in, ${customCount} custom)`);
+
+    if (customCount > 0) {
+      const customNames = commands.slice(BUILTIN_COMMANDS.length).map(c => `/${c.command}`);
+      console.log(`    Custom commands: ${customNames.join(', ')}`);
+    }
+  } catch (error) {
+    console.error('Error registering bot commands:', error.message);
+  }
+}
+
+/**
+ * Watch for changes in the .claude/commands directory
+ * and re-register commands when files are added/removed/modified
+ */
+function watchCommandsDirectory() {
+  const commandsDir = path.join(WORKING_DIR, '.claude', 'commands');
+
+  // Create directory if it doesn't exist
+  if (!fs.existsSync(commandsDir)) {
+    try {
+      fs.mkdirSync(commandsDir, { recursive: true });
+      console.log(`Created commands directory: ${commandsDir}`);
+    } catch (error) {
+      console.error('Error creating commands directory:', error.message);
+      return;
+    }
+  }
+
+  // Debounce timer to avoid multiple rapid updates
+  let debounceTimer = null;
+
+  try {
+    fs.watch(commandsDir, { persistent: false }, (eventType, filename) => {
+      if (!filename || !filename.endsWith('.md')) return;
+
+      // Debounce: wait 500ms before registering to batch rapid changes
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log(`Commands directory changed (${eventType}: ${filename}), updating bot commands...`);
+        registerBotCommands();
+      }, 500);
+    });
+
+    console.log(`[OK] Watching for command changes: ${commandsDir}`);
+  } catch (error) {
+    console.error('Error watching commands directory:', error.message);
   }
 }
 
@@ -1169,27 +1300,33 @@ bot.on('message', async (msg) => {
   }
 
   // ============================
-  // CLAUDE CUSTOM COMMANDS (e.g., /cc_extract_pdf, /cc_agenda)
+  // CUSTOM CLAUDE SLASH COMMANDS (direct invocation)
+  // Supports both direct names (/agenda) and Telegram-safe names (/cc_agenda)
   // ============================
-  if (text && text.startsWith('/cc_')) {
-    // Check if this is a Claude custom command
-    const customCommands = discoverCustomCommands();
-    const commandMatch = text.match(/^\/cc_(\w+)(?:\s+(.*))?$/);
-
+  if (text && text.startsWith('/')) {
+    const commandMatch = text.match(/^\/(\S+)(?:\s+(.*))?$/);
     if (commandMatch) {
-      const commandName = commandMatch[1];
-      // Convert underscores back to hyphens for Claude format
-      const claudeCommand = `/${commandName.replace(/_/g, '-')}`;
-      const argsText = commandMatch[2] || '';
+      let commandName = commandMatch[1];
+      const commandArgs = commandMatch[2] || '';
 
-      // Check if it matches a custom command
-      if (customCommands.includes(claudeCommand)) {
-        await bot.sendMessage(chatId, t(chatId, 'commands.command.executing', { command: claudeCommand }));
+      // Handle /cc_ prefix (Telegram-safe format)
+      if (commandName.startsWith('cc_')) {
+        // Convert /cc_command_name back to /command-name
+        commandName = commandName.substring(3).replace(/_/g, '-');
+      }
+
+      // Check if this command exists in .claude/commands/
+      const commandsDir = path.join(WORKING_DIR, '.claude', 'commands');
+      const commandFile = path.join(commandsDir, `${commandName}.md`);
+
+      if (fs.existsSync(commandFile)) {
+        console.log(`[${chatId}] Executing custom command: /${commandName}`);
+        await bot.sendMessage(chatId, t(chatId, 'commands.command.executing', { command: `/${commandName}` }));
 
         // Build args for slash command
-        const slashArgs = ['--dangerously-skip-permissions', claudeCommand];
-        if (argsText.trim()) {
-          slashArgs.push(...argsText.trim().split(/\s+/));
+        const slashArgs = ['--dangerously-skip-permissions', `/${commandName}`];
+        if (commandArgs) {
+          slashArgs.push(commandArgs);
         }
 
         // Kill existing session
@@ -1201,13 +1338,12 @@ bot.on('message', async (msg) => {
         }
 
         // Create session with slash command
-        const session = createClaudeSessionWithFlags(chatId, slashArgs);
+        createClaudeSessionWithFlags(chatId, slashArgs);
         return;
       }
     }
 
-    // Unknown /cc_ command
-    await bot.sendMessage(chatId, t(chatId, 'commands.claudeCommandNotFound', { command: text.split(' ')[0] }));
+    // Unknown command - ignore silently (Telegram shows "command not found" anyway)
     return;
   }
 
@@ -1242,16 +1378,23 @@ process.on('SIGINT', () => {
 // ============================
 // INICIALIZAÇÃO
 // ============================
-console.log('╔════════════════════════════════════════════╗');
-console.log('║   TELEGRAM CLAUDE CODE STREAM             ║');
-console.log('║      Real-Time JSON Streaming             ║');
-console.log('╚════════════════════════════════════════════╝');
-console.log(`📁 Directory: ${WORKING_DIR}`);
-console.log(`🤖 Claude CLI: ${CLAUDE_CODE_PATH}`);
+console.log('============================================');
+console.log('   TELEGRAM CLAUDE CODE STREAM             ');
+console.log('      Real-Time JSON Streaming             ');
+console.log('============================================');
+console.log(`Directory: ${WORKING_DIR}`);
+console.log(`Claude CLI: ${CLAUDE_CODE_PATH}`);
 if (AUTHORIZED_CHAT_IDS.length > 0) {
-  console.log(`🔐 Authorization: Enabled (${AUTHORIZED_CHAT_IDS.length} authorized chat(s))`);
-  AUTHORIZED_CHAT_IDS.forEach(id => console.log(`   ├─ Chat ID: ${id}`));
+  console.log(`Authorization: Enabled (${AUTHORIZED_CHAT_IDS.length} authorized chat(s))`);
+  AUTHORIZED_CHAT_IDS.forEach(id => console.log(`   - Chat ID: ${id}`));
 } else {
-  console.log(`🔐 Authorization: Disabled (any chat can use)`);
+  console.log(`Authorization: Disabled (any chat can use)`);
 }
-console.log('✅ Bot started - Waiting for commands...\n');
+
+// Register bot commands with Telegram (dynamic command menu)
+registerBotCommands();
+
+// Watch for changes in commands directory
+watchCommandsDirectory();
+
+console.log('[OK] Bot started - Waiting for commands...\n');
